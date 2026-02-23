@@ -98,10 +98,10 @@ class InboxAgent(agents.Agent):
                 return f"I couldn't reach the inbox service: {message}"
             data = response.json()
 
-            def publish_sources(payload):
+            async def publish_sources(payload):
                 try:
                     room = ctx.session.room_io.room
-                    room.local_participant.publish_data(
+                    await room.local_participant.publish_data(
                         json.dumps({"type": "sources", "sources": payload}),
                         topic=SOURCES_TOPIC,
                     )
@@ -129,7 +129,7 @@ class InboxAgent(agents.Agent):
                     if job_data.get("status") == "done":
                         sources = job_data.get("sources") or []
                         if sources:
-                            publish_sources(sources)
+                            await publish_sources(sources)
                         return job_data.get("answer", "")
                     if job_data.get("status") == "error":
                         return f"There was an error: {job_data.get('error', 'unknown')}"
@@ -138,7 +138,7 @@ class InboxAgent(agents.Agent):
 
             sources = data.get("sources") or []
             if sources:
-                publish_sources(sources)
+                await publish_sources(sources)
             return data.get("answer", "No answer returned.")
 
 

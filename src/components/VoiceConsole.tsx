@@ -447,8 +447,7 @@ export default function VoiceConsole() {
           </div>
 
           <p className="notes">
-            Tip: Try “Summarize today’s important emails” or “What’s in the PDF
-            attachment from finance?”
+            Tip: Try “Summarize today’s important emails” or “Read and summarize the attachment from my latest email”
           </p>
         </section>
 

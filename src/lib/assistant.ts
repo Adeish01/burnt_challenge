@@ -76,6 +76,21 @@ function shouldIncludeAttachments(question: string) {
   return keywords.some((keyword) => normalized.includes(keyword));
 }
 
+function prefersLatest(question: string) {
+  const normalized = question.toLowerCase();
+  const keywords = [
+    "latest",
+    "most recent",
+    "newest",
+    "last email",
+    "most recent email",
+    "latest email",
+    "last message",
+    "most recent message"
+  ];
+  return keywords.some((keyword) => normalized.includes(keyword));
+}
+
 async function planQuery(question: string): Promise<Plan> {
   const prompt = `Question: ${question}\n\nReturn JSON with keys: searchQuery (string or null), includeAttachments (boolean), limit (number). Keep limit <= 10.`;
   const response = await openai.chat.completions.create({
@@ -91,7 +106,7 @@ async function planQuery(question: string): Promise<Plan> {
   return {
     searchQuery: parsed.searchQuery ?? null,
     includeAttachments: Boolean(parsed.includeAttachments),
-    limit: Math.min(parsed.limit ?? 5, 10)
+    limit: Math.min(Math.max(parsed.limit ?? 5, 1), 10)
   };
 }
 
@@ -123,10 +138,16 @@ export async function answerQuestion(
   try {
     const plan = await planQuery(question);
     const includeAttachments = plan.includeAttachments || shouldIncludeAttachments(question);
-    const messages = await listMessages({
-      limit: plan.limit,
-      searchQuery: plan.searchQuery ?? undefined
+    const wantsLatest = prefersLatest(question);
+    const limit = wantsLatest ? 1 : plan.limit;
+    const searchQuery = wantsLatest ? null : plan.searchQuery;
+    let messages = await listMessages({
+      limit,
+      searchQuery: searchQuery ?? undefined
     });
+    if (messages.length === 0 && searchQuery) {
+      messages = await listMessages({ limit });
+    }
 
     const detailed = await Promise.all(
       messages.map(async (msg) => {

@@ -47,7 +47,6 @@ export async function listMessages(options: {
   const params = new URLSearchParams();
   if (options.limit) params.set("limit", String(options.limit));
   if (options.searchQuery) {
-    params.set("search_query", options.searchQuery);
     params.set("query", options.searchQuery);
   }
   if (typeof options.unread === "boolean") {
