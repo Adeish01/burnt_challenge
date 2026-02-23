@@ -15,12 +15,24 @@ logger = logging.getLogger("voice_inbox_agent")
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "coral")
+OPENAI_TTS_INSTRUCTIONS = os.getenv(
+    "OPENAI_TTS_INSTRUCTIONS",
+    "Speak in a natural, conversational tone at a moderate pace. "
+    "Use brief pauses between thoughts and slight variation in intonation. "
+    "Avoid a robotic cadence.",
+)
 SOURCES_TOPIC = "inbox.sources"
+TTS_CONFIG_TOPIC = "inbox.tts.config"
 
 class InboxAgent(agents.Agent):
     def __init__(self):
         vad = silero.VAD.load()
         streaming_stt = agents.stt.StreamAdapter(stt=openai.STT(), vad=vad)
+        self.tts_model = OPENAI_TTS_MODEL
+        self.tts_voice = OPENAI_TTS_VOICE
+        self.tts_instructions = OPENAI_TTS_INSTRUCTIONS
         super().__init__(
             instructions=(
                 "You are a voice gateway for an email assistant. "
@@ -28,11 +40,32 @@ class InboxAgent(agents.Agent):
             "Do not answer directly."
         ),
         stt=streaming_stt,
-        tts=openai.TTS(),
+        tts=openai.TTS(
+            model=self.tts_model,
+            voice=self.tts_voice,
+            instructions=self.tts_instructions,
+        ),
         llm=openai.LLM(model=OPENAI_MODEL),
         vad=vad,
         turn_detection="vad",
     )
+
+    def update_tts_config(self, model: str | None = None, voice: str | None = None):
+        next_model = model or self.tts_model
+        next_voice = voice or self.tts_voice
+        if next_model == self.tts_model and next_voice == self.tts_voice:
+            return
+        self.tts_model = next_model
+        self.tts_voice = next_voice
+        self._tts = openai.TTS(
+            model=self.tts_model,
+            voice=self.tts_voice,
+            instructions=self.tts_instructions,
+        )
+        logger.info(
+            "updated tts config",
+            extra={"model": self.tts_model, "voice": self.tts_voice},
+        )
 
     @agents.function_tool()
     async def ask_inbox(self, ctx: agents.RunContext, question: str) -> str:
@@ -138,6 +171,27 @@ async def main() -> None:
 
     session = agents.AgentSession()
     agent = InboxAgent()
+
+    @room.on("data_received")
+    def _on_data(packet: rtc.DataPacket):
+        if packet.topic != TTS_CONFIG_TOPIC:
+            return
+        try:
+            payload = packet.data
+            if isinstance(payload, memoryview):
+                payload = payload.tobytes()
+            if isinstance(payload, (bytes, bytearray)):
+                payload = payload.decode("utf-8")
+            config = json.loads(payload)
+        except Exception as exc:
+            logger.warning("failed to parse tts config", extra={"error": str(exc)})
+            return
+        if config.get("type") != "tts_config":
+            return
+        model = config.get("model")
+        voice = config.get("voice")
+        agent.update_tts_config(model=model, voice=voice)
+
     session.on("user_input_transcribed", lambda ev: logger.info("user said: %s", ev.transcript))
     session.on("conversation_item_added", lambda ev: logger.info("assistant: %s", ev.item))
     await session.start(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -37,6 +37,27 @@ type TranscriptLine = {
 
 const AGENT_EVENTS_TOPIC = "lk.agent.events";
 const SOURCES_TOPIC = "inbox.sources";
+const TTS_CONFIG_TOPIC = "inbox.tts.config";
+
+const DEFAULT_TTS_MODEL = "gpt-4o-mini-tts";
+const DEFAULT_TTS_VOICE = "coral";
+const TTS_MODELS = [
+  { id: "gpt-4o-mini-tts", label: "gpt-4o-mini-tts (natural)" },
+  { id: "tts-1-hd", label: "tts-1-hd (high quality)" },
+  { id: "tts-1", label: "tts-1 (fast)" }
+];
+const TTS_VOICES = [
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "fable",
+  "nova",
+  "onyx",
+  "sage",
+  "shimmer"
+];
 
 type SourceInfo = {
   id: string;
@@ -56,6 +77,8 @@ export default function VoiceConsole() {
   const [agentState, setAgentState] = useState<keyof typeof agentStateCopy>(
     "listening"
   );
+  const [ttsModel, setTtsModel] = useState(DEFAULT_TTS_MODEL);
+  const [ttsVoice, setTtsVoice] = useState(DEFAULT_TTS_VOICE);
   const roomRef = useRef<Room | null>(null);
   const micRef = useRef<LocalAudioTrack | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -72,6 +95,26 @@ export default function VoiceConsole() {
     }
     return `${statusCopy.connected} · ${agentStateCopy[agentState]}`;
   }, [agentState, status]);
+
+  useEffect(() => {
+    try {
+      const storedModel = localStorage.getItem("ttsModel");
+      const storedVoice = localStorage.getItem("ttsVoice");
+      if (storedModel) setTtsModel(storedModel);
+      if (storedVoice) setTtsVoice(storedVoice);
+    } catch (_err) {
+      // Ignore storage errors (e.g. disabled in browser)
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ttsModel", ttsModel);
+      localStorage.setItem("ttsVoice", ttsVoice);
+    } catch (_err) {
+      // Ignore storage errors
+    }
+  }, [ttsModel, ttsVoice]);
 
   const pushLine = useCallback(
     (role: "user" | "agent", text: string, sources?: SourceInfo[] | null) => {
@@ -103,6 +146,28 @@ export default function VoiceConsole() {
       return next;
     });
   }, []);
+
+  const sendTtsConfig = useCallback(
+    (room: Room | null, config: { model: string; voice: string }) => {
+      if (!room) return;
+      if (room.state !== ConnectionState.Connected) return;
+      if (!room.localParticipant) return;
+      const payload = JSON.stringify({
+        type: "tts_config",
+        model: config.model,
+        voice: config.voice
+      });
+      void room.localParticipant
+        .publishData(new TextEncoder().encode(payload), {
+          reliable: true,
+          topic: TTS_CONFIG_TOPIC
+        })
+        .catch((err) => {
+          console.warn("TTS config send failed", err);
+        });
+    },
+    []
+  );
 
   const handleAgentEvent = useCallback(
     (payload: string) => {
@@ -266,6 +331,7 @@ export default function VoiceConsole() {
       });
 
       await room.connect(url, token);
+      sendTtsConfig(room, { model: ttsModel, voice: ttsVoice });
       const mic = await createLocalAudioTrack({
         echoCancellation: true,
         noiseSuppression: true,
@@ -281,7 +347,12 @@ export default function VoiceConsole() {
       setError(err instanceof Error ? err.message : "Unknown error");
       setStatus("error");
     }
-  }, [handleAgentEvent, startMeter]);
+  }, [handleAgentEvent, sendTtsConfig, startMeter, ttsModel, ttsVoice]);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    sendTtsConfig(roomRef.current, { model: ttsModel, voice: ttsVoice });
+  }, [sendTtsConfig, status, ttsModel, ttsVoice]);
 
   const disconnect = useCallback(async () => {
     try {
@@ -338,15 +409,40 @@ export default function VoiceConsole() {
             </button>
           </div>
 
-          <div className="feature-list">
-            <div>
-              <span className="tag">Full Inbox</span> Voice-first access with no manual email selection.
+          <div className="tts-config">
+            <div className="tts-header">Voice Settings</div>
+            <div className="tts-grid">
+              <label className="tts-field">
+                <span>Voice</span>
+                <select
+                  value={ttsVoice}
+                  onChange={(event) => setTtsVoice(event.target.value)}
+                  disabled={status === "connecting"}
+                >
+                  {TTS_VOICES.map((voice) => (
+                    <option key={voice} value={voice}>
+                      {voice}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="tts-field">
+                <span>Model</span>
+                <select
+                  value={ttsModel}
+                  onChange={(event) => setTtsModel(event.target.value)}
+                  disabled={status === "connecting"}
+                >
+                  {TTS_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <div>
-              <span className="tag">Attachments</span> PDF, DOCX, and image OCR with delay-aware responses.
-            </div>
-            <div>
-              <span className="tag">Status</span> The assistant tells you when answers take time.
+            <div className="tts-note">
+              Changes apply to the next assistant reply.
             </div>
           </div>
 
