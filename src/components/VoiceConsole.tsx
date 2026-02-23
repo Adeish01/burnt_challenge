@@ -85,7 +85,6 @@ export default function VoiceConsole() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
-  const sawAgentEventsRef = useRef(false);
   const pendingSourcesRef = useRef<SourceInfo[] | null>(null);
   const sourcesRafRef = useRef<number | null>(null);
 
@@ -180,8 +179,6 @@ export default function VoiceConsole() {
           new_state?: string;
           message?: string;
         };
-
-        sawAgentEventsRef.current = true;
 
         if (parsed.type === "user_input_transcribed") {
           if (parsed.is_final && parsed.transcript) {

@@ -11,8 +11,7 @@ const envSchema = z.object({
   LIVEKIT_API_SECRET: z.string().min(1),
   LIVEKIT_ROOM: z.string().default("voice-inbox"),
   ATTACHMENT_MAX_MB: z.string().default("20"),
-  OCR_LANG: z.string().default("eng"),
-  LONG_TASK_THRESHOLD_MS: z.string().default("8000")
+  OCR_LANG: z.string().default("eng")
 });
 
 const parsed = envSchema.safeParse({
@@ -26,8 +25,7 @@ const parsed = envSchema.safeParse({
   LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET,
   LIVEKIT_ROOM: process.env.LIVEKIT_ROOM,
   ATTACHMENT_MAX_MB: process.env.ATTACHMENT_MAX_MB,
-  OCR_LANG: process.env.OCR_LANG,
-  LONG_TASK_THRESHOLD_MS: process.env.LONG_TASK_THRESHOLD_MS
+  OCR_LANG: process.env.OCR_LANG
 });
 
 if (!parsed.success) {
@@ -36,6 +34,5 @@ if (!parsed.success) {
 
 export const env = {
   ...parsed.data,
-  ATTACHMENT_MAX_MB: Number(parsed.data.ATTACHMENT_MAX_MB),
-  LONG_TASK_THRESHOLD_MS: Number(parsed.data.LONG_TASK_THRESHOLD_MS)
+  ATTACHMENT_MAX_MB: Number(parsed.data.ATTACHMENT_MAX_MB)
 };
