@@ -297,9 +297,7 @@ export default function VoiceConsole() {
 
         <section className="card">
           <div className="kicker">Conversation</div>
-          <h2 className="title" style={{ fontSize: "1.2rem" }}>
-            Transcript
-          </h2>
+          <h2 className="title">Transcript</h2>
           {status === "connected" && agentState !== "listening" ? (
             <div className="status-note">
               Assistant is {agentStateCopy[agentState].toLowerCase()}...

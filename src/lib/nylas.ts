@@ -72,9 +72,11 @@ export async function getMessage(messageId: string) {
   return data.data;
 }
 
-export async function downloadAttachment(attachmentId: string) {
+export async function downloadAttachment(attachmentId: string, messageId: string) {
   const res = await nylasRequest(
-    `/grants/${env.NYLAS_GRANT_ID}/attachments/${attachmentId}`
+    `/grants/${env.NYLAS_GRANT_ID}/attachments/${attachmentId}/download?message_id=${encodeURIComponent(
+      messageId
+    )}`
   );
   const arrayBuffer = await res.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);

@@ -5,6 +5,12 @@ import Tesseract from "tesseract.js";
 import { env } from "@/lib/config";
 
 const MAX_BYTES = env.ATTACHMENT_MAX_MB * 1024 * 1024;
+const OCTET_STREAM = new Set(["application/octet-stream", "binary/octet-stream"]);
+
+function normalizeMime(value?: string) {
+  if (!value) return undefined;
+  return value.split(";")[0]?.trim().toLowerCase();
+}
 
 function guessFromFilename(filename?: string) {
   if (!filename) return undefined;
@@ -24,6 +30,10 @@ export async function extractAttachmentText(input: {
   filename?: string;
   contentType?: string;
 }) {
+  if (input.buffer.length === 0) {
+    return { text: "", warning: "Attachment is empty." };
+  }
+
   if (input.buffer.length > MAX_BYTES) {
     return {
       text: "",
@@ -32,28 +42,58 @@ export async function extractAttachmentText(input: {
   }
 
   const detected = await fileTypeFromBuffer(input.buffer);
-  const type = input.contentType ?? detected?.mime ?? guessFromFilename(input.filename);
+  const headerType = normalizeMime(input.contentType);
+  const detectedType = normalizeMime(detected?.mime);
+  const guessedType = normalizeMime(guessFromFilename(input.filename));
+  const type = headerType && !OCTET_STREAM.has(headerType)
+    ? headerType
+    : detectedType ?? guessedType;
 
   if (!type) {
     return { text: "", warning: "Unknown attachment type." };
   }
 
   if (type === "application/pdf") {
-    const parsed = await pdf(input.buffer);
-    return { text: parsed.text || "", warning: undefined };
+    try {
+      const parsed = await pdf(input.buffer);
+      const text = parsed.text || "";
+      const warning = text.trim()
+        ? undefined
+        : "No extractable text in PDF (may be scanned or encrypted).";
+      return { text, warning };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown PDF error";
+      return { text: "", warning: `PDF parse failed: ${message}` };
+    }
   }
 
   if (
     type ===
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
   ) {
-    const result = await mammoth.extractRawText({ buffer: input.buffer });
-    return { text: result.value || "", warning: result.messages?.[0]?.message };
+    try {
+      const result = await mammoth.extractRawText({ buffer: input.buffer });
+      const text = result.value || "";
+      const warning =
+        result.messages?.[0]?.message ||
+        (text.trim() ? undefined : "No extractable text in DOCX.");
+      return { text, warning };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown DOCX error";
+      return { text: "", warning: `DOCX parse failed: ${message}` };
+    }
   }
 
   if (type.startsWith("image/")) {
-    const result = await Tesseract.recognize(input.buffer, env.OCR_LANG);
-    return { text: result.data.text || "", warning: undefined };
+    try {
+      const result = await Tesseract.recognize(input.buffer, env.OCR_LANG);
+      const text = result.data.text || "";
+      const warning = text.trim() ? undefined : "OCR returned no text.";
+      return { text, warning };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown OCR error";
+      return { text: "", warning: `OCR failed: ${message}` };
+    }
   }
 
   return { text: "", warning: `Unsupported attachment type: ${type}` };

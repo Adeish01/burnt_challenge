@@ -15,6 +15,14 @@ type Plan = {
   limit: number;
 };
 
+type AttachmentWithMessage = {
+  id: string;
+  filename?: string;
+  content_type?: string;
+  size?: number;
+  messageId: string;
+};
+
 function isSmallTalk(question: string) {
   const normalized = question.trim().toLowerCase();
   if (!normalized) return false;
@@ -31,6 +39,33 @@ function isSmallTalk(question: string) {
     "yo"
   ];
   return greetings.some((phrase) => normalized === phrase || normalized.startsWith(`${phrase} `));
+}
+
+function shouldIncludeAttachments(question: string) {
+  const normalized = question.toLowerCase();
+  const keywords = [
+    "attachment",
+    "attachments",
+    "attached",
+    "file",
+    "pdf",
+    "docx",
+    "document",
+    "resume",
+    "invoice",
+    "statement",
+    "contract",
+    "presentation",
+    "slide",
+    "spreadsheet",
+    "xlsx",
+    "csv",
+    "image",
+    "photo",
+    "screenshot",
+    "scan"
+  ];
+  return keywords.some((keyword) => normalized.includes(keyword));
 }
 
 async function planQuery(question: string): Promise<Plan> {
@@ -78,6 +113,7 @@ export async function answerQuestion(
 
   try {
     const plan = await planQuery(question);
+    const includeAttachments = plan.includeAttachments || shouldIncludeAttachments(question);
     const messages = await listMessages({
       limit: plan.limit,
       searchQuery: plan.searchQuery ?? undefined
@@ -91,8 +127,13 @@ export async function answerQuestion(
       })
     );
 
-    const attachments = detailed.flatMap((msg) => msg.attachments ?? []);
-    const heavy = plan.includeAttachments && estimateHeavyWork(attachments);
+    const attachments: AttachmentWithMessage[] = detailed.flatMap((msg) =>
+      (msg.attachments ?? []).map((att) => ({
+        ...att,
+        messageId: msg.id
+      }))
+    );
+    const heavy = includeAttachments && estimateHeavyWork(attachments);
 
     const contextLines: string[] = [];
     for (const message of detailed) {
@@ -112,10 +153,10 @@ export async function answerQuestion(
     }
 
     let attachmentContext = "";
-    if (plan.includeAttachments && mode === "full") {
+    if (includeAttachments && mode === "full") {
       for (const attachment of attachments) {
         try {
-          const download = await downloadAttachment(attachment.id);
+          const download = await downloadAttachment(attachment.id, attachment.messageId);
           const extracted = await extractAttachmentText({
             buffer: download.buffer,
             filename: attachment.filename,
@@ -127,7 +168,13 @@ export async function answerQuestion(
             attachmentContext += `Warning: ${extracted.warning}\n`;
           }
         } catch (err) {
-          attachmentContext += `Attachment ${attachment.filename ?? attachment.id}: Failed to read.\n`;
+          const message = err instanceof Error ? err.message : "Unknown error";
+          console.error("Attachment read failed", {
+            attachmentId: attachment.id,
+            filename: attachment.filename,
+            error: message
+          });
+          attachmentContext += `Attachment ${attachment.filename ?? attachment.id}: Failed to read. ${message}\n`;
         }
       }
     }
