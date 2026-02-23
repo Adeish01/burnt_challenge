@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ConnectionState,
   LocalAudioTrack,
@@ -30,9 +32,19 @@ type TranscriptLine = {
   role: "user" | "agent";
   text: string;
   timestamp: string;
+  sources?: SourceInfo[];
 };
 
 const AGENT_EVENTS_TOPIC = "lk.agent.events";
+const SOURCES_TOPIC = "inbox.sources";
+
+type SourceInfo = {
+  id: string;
+  subject: string;
+  from: string;
+  date?: number;
+  attachments: string[];
+};
 
 export default function VoiceConsole() {
   const [status, setStatus] = useState<keyof typeof statusCopy>(
@@ -51,6 +63,8 @@ export default function VoiceConsole() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
   const sawAgentEventsRef = useRef(false);
+  const pendingSourcesRef = useRef<SourceInfo[] | null>(null);
+  const sourcesRafRef = useRef<number | null>(null);
 
   const statusLabel = useMemo(() => {
     if (status !== "connected") {
@@ -59,19 +73,35 @@ export default function VoiceConsole() {
     return `${statusCopy.connected} · ${agentStateCopy[agentState]}`;
   }, [agentState, status]);
 
-  const pushLine = useCallback((role: "user" | "agent", text: string) => {
-    setLines((prev) => [
-      {
-        id: crypto.randomUUID(),
-        role,
-        text,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit"
-        })
-      },
-      ...prev
-    ]);
+  const pushLine = useCallback(
+    (role: "user" | "agent", text: string, sources?: SourceInfo[] | null) => {
+      setLines((prev) => [
+        {
+          id: crypto.randomUUID(),
+          role,
+          text,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit"
+          }),
+          sources: sources ?? undefined
+        },
+        ...prev
+      ]);
+    },
+    []
+  );
+
+  const applySourcesToLatest = useCallback((sources: SourceInfo[]) => {
+    setLines((prev) => {
+      const index = prev.findIndex(
+        (line) => line.role === "agent" && !line.sources
+      );
+      if (index === -1) return prev;
+      const next = [...prev];
+      next[index] = { ...next[index], sources };
+      return next;
+    });
   }, []);
 
   const handleAgentEvent = useCallback(
@@ -104,7 +134,9 @@ export default function VoiceConsole() {
           const content =
             typeof raw === "string" ? raw : raw?.text;
           if (content) {
-            pushLine("agent", content);
+            const sources = pendingSourcesRef.current;
+            pendingSourcesRef.current = null;
+            pushLine("agent", content, sources);
           }
           return;
         }
@@ -202,6 +234,30 @@ export default function VoiceConsole() {
           track.attach(audioRef.current);
         }
       });
+      room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+        if (topic !== SOURCES_TOPIC) return;
+        try {
+          const text =
+            typeof payload === "string"
+              ? payload
+              : new TextDecoder().decode(payload);
+          const data = JSON.parse(text) as { type?: string; sources?: SourceInfo[] };
+          if (data.type === "sources" && Array.isArray(data.sources)) {
+            pendingSourcesRef.current = data.sources;
+            if (sourcesRafRef.current) {
+              cancelAnimationFrame(sourcesRafRef.current);
+            }
+            sourcesRafRef.current = requestAnimationFrame(() => {
+              if (pendingSourcesRef.current) {
+                applySourcesToLatest(pendingSourcesRef.current);
+                pendingSourcesRef.current = null;
+              }
+            });
+          }
+        } catch (err) {
+          console.error("Failed to parse sources payload", err);
+        }
+      });
       // Transcription fallback disabled to avoid duplicate lines.
 
       room.registerTextStreamHandler(AGENT_EVENTS_TOPIC, async (reader) => {
@@ -234,6 +290,11 @@ export default function VoiceConsole() {
       stopMeter();
     } finally {
       setStatus("disconnected");
+      pendingSourcesRef.current = null;
+      if (sourcesRafRef.current) {
+        cancelAnimationFrame(sourcesRafRef.current);
+        sourcesRafRef.current = null;
+      }
     }
   }, [stopMeter]);
 
@@ -312,7 +373,38 @@ export default function VoiceConsole() {
                   <strong>{line.role === "user" ? "You" : "Assistant"}</strong>
                   {" · "}
                   <span style={{ color: "var(--text-muted)" }}>{line.timestamp}</span>
-                  <div>{line.text}</div>
+                  <div className="line-body markdown">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {line.text}
+                    </ReactMarkdown>
+                  </div>
+                  {line.sources?.length ? (
+                    <div className="sources">
+                      <div className="sources-title">Sources</div>
+                      {line.sources.map((source) => (
+                        <div key={source.id} className="source-item">
+                          <div className="source-subject">
+                            {source.subject || "(no subject)"}
+                          </div>
+                          <div className="source-meta">
+                            {source.from || "Unknown"}{" "}
+                            {source.date
+                              ? `· ${new Date(
+                                  source.date > 1_000_000_000_000
+                                    ? source.date
+                                    : source.date * 1000
+                                ).toLocaleString()}`
+                              : ""}
+                          </div>
+                          {source.attachments?.length ? (
+                            <div className="source-attachments">
+                              Attachments: {source.attachments.join(", ")}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ))
             )}

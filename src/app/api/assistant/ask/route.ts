@@ -23,6 +23,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         status: "done",
         answer: quick.answer,
+        sources: quick.sources ?? [],
         ...(showDebug ? { debug: quick.error } : {})
       });
     }
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     if (quick.heavy) {
       const jobId = createJob(async () => {
         const full = await answerQuestion(question, { mode: "full" });
-        return full.answer;
+        return { answer: full.answer, sources: full.sources ?? [] };
       });
 
       return NextResponse.json({
@@ -41,7 +42,11 @@ export async function POST(req: Request) {
     }
 
     const full = await answerQuestion(question, { mode: "full" });
-    return NextResponse.json({ status: "done", answer: full.answer });
+    return NextResponse.json({
+      status: "done",
+      answer: full.answer,
+      sources: full.sources ?? []
+    });
   } catch (err) {
     console.error("assistant/ask failed", err);
     return NextResponse.json(

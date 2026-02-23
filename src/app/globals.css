@@ -258,6 +258,10 @@ main {
   font-size: 0.92rem;
 }
 
+.line-body {
+  margin-top: 0.35rem;
+}
+
 .transcript .line strong {
   font-weight: 600;
 }
@@ -268,4 +272,82 @@ main {
 
 .transcript .line.agent {
   border-left: 3px solid var(--success);
+}
+
+
+.markdown :where(p, ul, ol, pre, blockquote) {
+  margin: 0 0 0.55rem 0;
+}
+
+.markdown :where(p:last-child, ul:last-child, ol:last-child, pre:last-child, blockquote:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown :where(ul, ol) {
+  padding-left: 1.2rem;
+}
+
+.markdown :where(li) {
+  margin: 0.2rem 0;
+}
+
+.markdown :where(strong) {
+  font-weight: 600;
+}
+
+.markdown :where(code) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.85em;
+  background: #eef2f7;
+  padding: 0.1rem 0.25rem;
+  border-radius: 6px;
+}
+
+.markdown :where(blockquote) {
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+.sources {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.sources-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-2);
+  font-weight: 600;
+}
+
+.source-item {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--space-2);
+}
+
+.source-subject {
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+
+.source-meta {
+  color: var(--muted-2);
+  font-size: 0.8rem;
+}
+
+.source-attachments {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
 }

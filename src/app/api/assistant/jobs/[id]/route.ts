@@ -10,9 +10,11 @@ export async function GET(
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
+  const result = job.result;
   return NextResponse.json({
     status: job.status,
-    answer: job.result,
+    answer: result?.answer ?? "",
+    sources: result?.sources ?? [],
     error: job.error
   });
 }

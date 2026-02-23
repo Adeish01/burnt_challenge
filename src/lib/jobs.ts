@@ -2,10 +2,15 @@ import { nanoid } from "nanoid";
 
 export type JobStatus = "processing" | "done" | "error";
 
+export type JobResult = {
+  answer: string;
+  sources?: unknown;
+};
+
 export type JobRecord = {
   id: string;
   status: JobStatus;
-  result?: string;
+  result?: JobResult;
   error?: string;
   createdAt: number;
   updatedAt: number;
@@ -23,7 +28,7 @@ function prune() {
   }
 }
 
-export function createJob(task: () => Promise<string>) {
+export function createJob(task: () => Promise<JobResult>) {
   prune();
   const id = nanoid();
   const record: JobRecord = {

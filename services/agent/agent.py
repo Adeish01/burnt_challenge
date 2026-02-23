@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import logging
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ logger = logging.getLogger("voice_inbox_agent")
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+SOURCES_TOPIC = "inbox.sources"
 
 class InboxAgent(agents.Agent):
     def __init__(self):
@@ -63,6 +65,16 @@ class InboxAgent(agents.Agent):
                 return f"I couldn't reach the inbox service: {message}"
             data = response.json()
 
+            def publish_sources(payload):
+                try:
+                    room = ctx.session.room_io.room
+                    room.local_participant.publish_data(
+                        json.dumps({"type": "sources", "sources": payload}),
+                        topic=SOURCES_TOPIC,
+                    )
+                except Exception as exc:
+                    logger.warning("failed to publish sources", extra={"error": str(exc)})
+
             if data.get("status") == "processing":
                 await ctx.session.say(
                     data.get("message", "This may take a minute."),
@@ -82,12 +94,18 @@ class InboxAgent(agents.Agent):
                         continue
                     job_data = job_res.json()
                     if job_data.get("status") == "done":
+                        sources = job_data.get("sources") or []
+                        if sources:
+                            publish_sources(sources)
                         return job_data.get("answer", "")
                     if job_data.get("status") == "error":
                         return f"There was an error: {job_data.get('error', 'unknown')}"
 
                 return "That is taking longer than expected. Please try again."
 
+            sources = data.get("sources") or []
+            if sources:
+                publish_sources(sources)
             return data.get("answer", "No answer returned.")
 
 

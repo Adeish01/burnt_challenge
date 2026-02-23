@@ -15,6 +15,14 @@ type Plan = {
   limit: number;
 };
 
+type SourceInfo = {
+  id: string;
+  subject: string;
+  from: string;
+  date?: number;
+  attachments: string[];
+};
+
 type AttachmentWithMessage = {
   id: string;
   filename?: string;
@@ -107,7 +115,8 @@ export async function answerQuestion(
   if (isSmallTalk(question)) {
     return {
       answer: "Hi! Ask me anything about your inbox, emails, or attachments.",
-      heavy: false
+      heavy: false,
+      sources: []
     };
   }
 
@@ -136,7 +145,17 @@ export async function answerQuestion(
     const heavy = includeAttachments && estimateHeavyWork(attachments);
 
     const contextLines: string[] = [];
+    const sources: SourceInfo[] = [];
     for (const message of detailed) {
+      sources.push({
+        id: message.id,
+        subject: message.subject ?? "(no subject)",
+        from: formatSender(message.from),
+        date: message.date ?? undefined,
+        attachments: (message.attachments ?? []).map(
+          (att) => att.filename ?? att.id
+        )
+      });
       contextLines.push(
         `Message ${message.id}: Subject: ${message.subject ?? "(no subject)"}. From: ${formatSender(
           message.from
@@ -179,7 +198,7 @@ export async function answerQuestion(
       }
     }
 
-    const answerPrompt = `You are a voice-first email assistant. Answer the user question using ONLY the context provided. If the context is missing the answer, say so. Keep responses concise but complete for voice.\n\nQuestion: ${question}\n\nContext:\n${contextLines.join("\n")}\n\nAttachment Context:\n${attachmentContext || "(none)"}`;
+    const answerPrompt = `You are a voice-first email assistant. Answer the user question using ONLY the context provided. If the context is missing the answer, say so. Keep responses concise but complete for voice. Format the response in clear Markdown. Use numbered lists for multi-item summaries.\n\nQuestion: ${question}\n\nContext:\n${contextLines.join("\n")}\n\nAttachment Context:\n${attachmentContext || "(none)"}`;
 
     let answer = "Processing deferred.";
     if (mode === "full") {
@@ -191,7 +210,8 @@ export async function answerQuestion(
       answer = response.choices[0]?.message?.content ?? "No answer generated.";
     }
 
-    return { answer, heavy };
+    const sourceNote = sources.length ? "\n\nSources are listed on screen." : "";
+    return { answer: `${answer}${sourceNote}`, heavy, sources };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown inbox error";
@@ -199,7 +219,8 @@ export async function answerQuestion(
       answer:
         "I’m having trouble accessing your inbox right now. Please confirm your Nylas connection and try again.",
       heavy: false,
-      error: message
+      error: message,
+      sources: []
     };
   }
 }
