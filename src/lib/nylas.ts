@@ -18,6 +18,8 @@ export type NylasMessage = {
   attachments?: NylasAttachment[];
 };
 
+// Minimal wrapper for Nylas API requests. Ensures /v3 base and
+// raises on non-2xx responses with the raw body for debugging.
 async function nylasRequest(path: string, init?: RequestInit) {
   const rawBase = env.NYLAS_API_BASE.replace(/\/$/, "");
   const base = rawBase.endsWith("/v3") ? rawBase : `${rawBase}/v3`;
@@ -44,6 +46,7 @@ export async function listMessages(options: {
   unread?: boolean;
   receivedAfter?: number;
 } = {}) {
+  // Map internal options to Nylas query parameters.
   const params = new URLSearchParams();
   if (options.limit) params.set("limit", String(options.limit));
   if (options.searchQuery) {

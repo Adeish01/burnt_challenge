@@ -16,6 +16,8 @@ export type JobRecord = {
   updatedAt: number;
 };
 
+// Simple in-memory job store for long-running attachment extraction.
+// Replace with Redis or a durable queue in production.
 const jobs = new Map<string, JobRecord>();
 const MAX_JOB_AGE_MS = 1000 * 60 * 30;
 
@@ -29,6 +31,7 @@ function prune() {
 }
 
 export function createJob(task: () => Promise<JobResult>) {
+  // Fire-and-forget background execution so the API can return immediately.
   prune();
   const id = nanoid();
   const record: JobRecord = {

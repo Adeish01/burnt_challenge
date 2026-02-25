@@ -4,11 +4,13 @@ import { nanoid } from "nanoid";
 import { env } from "@/lib/config";
 
 export async function POST() {
+  // Each web client gets a unique identity for LiveKit presence.
   const identity = `web-${nanoid(8)}`;
   const token = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
     identity
   });
 
+  // Configure room defaults so the agent auto-joins the correct room.
   const roomConfig = new RoomConfiguration({
     name: env.LIVEKIT_ROOM,
     agents: [new RoomAgentDispatch({ agentName: "voice_inbox" })]

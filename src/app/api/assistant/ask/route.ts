@@ -7,16 +7,15 @@ export async function POST(req: Request) {
   const question = body?.question?.trim();
 
   if (!question) {
-    return NextResponse.json(
-      { error: "Missing question" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Missing question" }, { status: 400 });
   }
 
   try {
+    // Fast pass: determine whether attachments make this a heavy request.
     const quick = await answerQuestion(question, { mode: "fast" });
 
     if (quick.error) {
+      // Only expose raw errors in dev or when explicitly enabled.
       const showDebug =
         process.env.SHOW_INBOX_ERRORS === "true" ||
         process.env.NODE_ENV !== "production";
@@ -29,6 +28,7 @@ export async function POST(req: Request) {
     }
 
     if (quick.heavy) {
+      // Defer heavy attachment extraction to a background task.
       const jobId = createJob(async () => {
         const full = await answerQuestion(question, { mode: "full" });
         return { answer: full.answer, sources: full.sources ?? [] };
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         status: "processing",
         jobId,
-        message: "This may take a minute."
+        message: "We determined your request requires processing attachments. This may take a minute."
       });
     }
 

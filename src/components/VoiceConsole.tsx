@@ -35,9 +35,10 @@ type TranscriptLine = {
   sources?: SourceInfo[];
 };
 
-const AGENT_EVENTS_TOPIC = "lk.agent.events";
-const SOURCES_TOPIC = "inbox.sources";
-const TTS_CONFIG_TOPIC = "inbox.tts.config";
+// LiveKit data topics shared with the agent service.
+const AGENT_EVENTS_TOPIC = "lk.agent.events";      // Agent -> UI channel for status updates.
+const SOURCES_TOPIC = "inbox.sources";             // Agent -> UI channel for "metadata" (Email info).
+const TTS_CONFIG_TOPIC = "inbox.tts.config";       // UI -> Agent channel for "Remote Control."
 
 const DEFAULT_TTS_MODEL = "gpt-4o-mini-tts";
 const DEFAULT_TTS_VOICE = "coral";
@@ -85,6 +86,9 @@ export default function VoiceConsole() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
+
+  // Sources can arrive slightly before the assistant message; store briefly
+  // and attach to the next assistant line.
   const pendingSourcesRef = useRef<SourceInfo[] | null>(null);
   const sourcesRafRef = useRef<number | null>(null);
 
@@ -115,6 +119,7 @@ export default function VoiceConsole() {
     }
   }, [ttsModel, ttsVoice]);
 
+  // Append a new transcript line (newest first) with optional sources.
   const pushLine = useCallback(
     (role: "user" | "agent", text: string, sources?: SourceInfo[] | null) => {
       setLines((prev) => [
@@ -134,6 +139,7 @@ export default function VoiceConsole() {
     []
   );
 
+  // Attach sources to the most recent assistant line that lacks them.
   const applySourcesToLatest = useCallback((sources: SourceInfo[]) => {
     setLines((prev) => {
       const index = prev.findIndex(
@@ -146,6 +152,7 @@ export default function VoiceConsole() {
     });
   }, []);
 
+  // Publish the current TTS settings to the agent over LiveKit data channel.
   const sendTtsConfig = useCallback(
     (room: Room | null, config: { model: string; voice: string }) => {
       if (!room) return;
@@ -168,6 +175,7 @@ export default function VoiceConsole() {
     []
   );
 
+  // Parse agent events (transcripts/state/errors) and update the UI.
   const handleAgentEvent = useCallback(
     (payload: string) => {
       try {
@@ -180,6 +188,7 @@ export default function VoiceConsole() {
           message?: string;
         };
 
+        // User speech transcription from the agent.
         if (parsed.type === "user_input_transcribed") {
           if (parsed.is_final && parsed.transcript) {
             pushLine("user", parsed.transcript);
@@ -188,6 +197,7 @@ export default function VoiceConsole() {
           return;
         }
 
+        // Assistant response event from the agent.
         if (parsed.type === "conversation_item_added") {
           if (parsed.item?.role !== "assistant") {
             return;
@@ -203,6 +213,7 @@ export default function VoiceConsole() {
           return;
         }
 
+        // Agent state updates drive the UI status pill.
         if (parsed.type === "agent_state_changed" && parsed.new_state) {
           if (parsed.new_state === "listening") {
             setStatus("connected");
@@ -223,6 +234,7 @@ export default function VoiceConsole() {
     [pushLine]
   );
 
+  // Stop the mic level meter and release audio analyzer resources.
   const stopMeter = useCallback(() => {
     if (meterRafRef.current) {
       cancelAnimationFrame(meterRafRef.current);
@@ -235,6 +247,7 @@ export default function VoiceConsole() {
     setLevel(0);
   }, []);
 
+  // Start the mic level meter using an analyser node.
   const startMeter = useCallback((track: MediaStreamTrack) => {
     stopMeter();
     const audioCtx = new AudioContext();
@@ -263,11 +276,13 @@ export default function VoiceConsole() {
     meterRafRef.current = requestAnimationFrame(tick);
   }, [stopMeter]);
 
+  // Connect to LiveKit, publish mic audio, and register event handlers.
   const connect = useCallback(async () => {
     setStatus("connecting");
     setError(null);
 
     try {
+      // Fetch a server-minted LiveKit token for this client.
       const res = await fetch("/api/livekit/token", { method: "POST" });
       if (!res.ok) {
         throw new Error("Failed to fetch LiveKit token");
@@ -278,24 +293,29 @@ export default function VoiceConsole() {
         dynacast: true
       });
 
+      // Update UI when the room connection is established.
       room.on(RoomEvent.Connected, () => {
         setStatus("connected");
         setAgentState("listening");
       });
+      // Cleanup when disconnected.
       room.on(RoomEvent.Disconnected, () => {
         setStatus("disconnected");
         room.unregisterTextStreamHandler(AGENT_EVENTS_TOPIC);
       });
+      // Keep status in sync with connection state changes.
       room.on(RoomEvent.ConnectionStateChanged, (state) => {
         if (state === ConnectionState.Disconnected) {
           setStatus("disconnected");
         }
       });
+      // Attach remote audio tracks to the <audio> element.
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Audio && audioRef.current) {
           track.attach(audioRef.current);
         }
       });
+      // Handle sources payloads sent from the agent.
       room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
         if (topic !== SOURCES_TOPIC) return;
         try {
@@ -305,6 +325,7 @@ export default function VoiceConsole() {
               : new TextDecoder().decode(payload);
           const data = JSON.parse(text) as { type?: string; sources?: SourceInfo[] };
           if (data.type === "sources" && Array.isArray(data.sources)) {
+            // Defer attaching sources to keep ordering consistent with agent messages.
             pendingSourcesRef.current = data.sources;
             if (sourcesRafRef.current) {
               cancelAnimationFrame(sourcesRafRef.current);
@@ -322,6 +343,7 @@ export default function VoiceConsole() {
       });
       // Transcription fallback disabled to avoid duplicate lines.
 
+      // Stream agent events (transcripts/state) into the UI.
       room.registerTextStreamHandler(AGENT_EVENTS_TOPIC, async (reader) => {
         const payload = await reader.readAll();
         handleAgentEvent(payload);

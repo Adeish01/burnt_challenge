@@ -4,6 +4,7 @@ import { fileTypeFromBuffer } from "file-type";
 import Tesseract from "tesseract.js";
 import { env } from "@/lib/config";
 
+// Max attachment size we are willing to process (converted from MB to bytes).
 const MAX_BYTES = env.ATTACHMENT_MAX_MB * 1024 * 1024;
 const OCTET_STREAM = new Set(["application/octet-stream", "binary/octet-stream"]);
 
@@ -25,6 +26,7 @@ function guessFromFilename(filename?: string) {
   return undefined;
 }
 
+// Extract text from supported attachment types. This runs server-side only.
 export async function extractAttachmentText(input: {
   buffer: Buffer;
   filename?: string;
@@ -45,9 +47,10 @@ export async function extractAttachmentText(input: {
   const headerType = normalizeMime(input.contentType);
   const detectedType = normalizeMime(detected?.mime);
   const guessedType = normalizeMime(guessFromFilename(input.filename));
-  const type = headerType && !OCTET_STREAM.has(headerType)
-    ? headerType
-    : detectedType ?? guessedType;
+  const type =
+    headerType && !OCTET_STREAM.has(headerType)
+      ? headerType
+      : detectedType ?? guessedType;
 
   if (!type) {
     return { text: "", warning: "Unknown attachment type." };
